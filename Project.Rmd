@@ -1,0 +1,109 @@
+---
+title: "Machine learning Project"
+author: "Sabawoon Shafaq"
+date: "11 September 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+Devices such as Jawbone Up, Nike FuelBand, and Fitbit makes it possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, the goal is to quantify how well the proposed activity is done. The data is collected from 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Each participant performed one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). ONly class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes (http://groupware.les.inf.puc-rio.br/har).
+
+## Loading and PreProcessing Data
+The data collected from the devices is partially cleaned and can be downloaded from the link below.
+
+```{r echo=FALSE}
+rm(list=ls())
+library(caret)
+library(randomForest)
+training<- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testing<- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+
+A quick look at the dimension of the data can reveal on the number of variables and observations. Also, a quick look at the names of the variables and their column number will be useful in the analysis to come.
+
+```{r}
+dim(training)
+dim(testing)
+names(training)
+```
+
+The first variable "X" seems to be a count variable to examine this look at the summary of the variable. The varialbe has no relationship with the outcome class, which is in the last column. However, it seems to monotonically, increases with classe varialbe moves from A to E. This can potentially be a problem as this could result in a strong correlation between class and X, therefore this will have to be excluded.
+
+``` {r}
+summary(training$X)
+```
+
+Ultimately, it is the variability of the predictors that can help with prediction. predictors that has no variability in them, does not help with prediction analysis and will only result in computational cost and loss of accuracy due to round-off errors. Therefore they need to be excluded. Therefore, variables that has near zero variability are excluded.
+
+```{r}
+nzv <-nearZeroVar(training)
+training<- training[ -nzv]
+testing<- testing[ -nzv]
+```
+
+Data with significant number of NA values can cause problem for some of the prediction algorithms, therefore, preprocessing technique such as k nearest neighbors (knn) can help resolve this issue if significant amount of data is not missing. To see the number of NA values:
+
+```{r}
+table(is.na(training))
+```
+It is clear that there is significant number of NA values in the data. knn method will not be able to approximate accurately the missing values in this case, therefore these variable are excluded. Also, the first variable "X" and the last variable of the testing data "problem_id" are excluded.
+
+```{r}
+a<- NULL
+for(i in 1:dim(training)[2]){
+        a[i]<- sum(is.na(training[, i]))
+}
+a<-which(a==0)
+training<-training[a]
+training<- training[-1]
+testing<-testing[a]
+testing<- testing[-c(1, 59)]
+```
+
+For this analysis Random Forest method is employed, and random forest method requires both the test and training set to have varialbes with the same class and the same levels for factors, otherwise, the method will result in an error. In this case, if the levels of the factor variables are not the same then the method will fail to predict the test classe values. The time varialbe "cvtd_timestamp" has a class of factor, however, different dates and times could exist in the test and train data set, therefore, the factor will have different levels. To fist this issue the variable is converted to a class of Date.
+
+```{r}
+training$cvtd_timestamp<- as.Date(training$cvtd_timestamp)
+testing$cvtd_timestamp<- as.Date(testing$cvtd_timestamp)
+```
+
+The training data is split into two parts called training_Train and training_Test. 60% of the data is assigned to training_Train while 40% is assigned to training_Test, this will be used for cross validation. Since the testing data given above does not have the classes values with it, the training data is split in this way so that the model can be tested.
+
+```{r}
+training_Total <- createDataPartition(y=training$classe,p=0.6, list=FALSE)
+training_Train <- training[training_Total,]
+training_Test <-  training[-training_Total,]
+```
+
+
+## Building Random Forest Model
+In general for accuracy many different models can be created using different methods and ensembled. However, the outcome of this problem consist of only 6 classes and large amount of data is available, therefore, a single method such as Random Forest can provide an accurate solution.
+
+```{r}
+set.seed(112233)
+modFit <- randomForest(classe ~ ., data=training_Train)
+prediction <- predict(modFit, training_Test, type = "class")
+confusionMatrix(prediction, training_Test$classe)
+```
+
+By default, Random Forest method employed here uses 500 trees. If the data is significantly large, this could require significant amount of computational power. Oneway to examine how quickly has the error dropped would be to plot the error versus trees. In the following figure it can be seen that the error has reached zero for a very small number of trees.
+```{r}
+plot(modFit)
+```
+## Prediction
+
+The following gives the prediction. The results were testing in the quiz provided with the project and 20 out 20 were predicted correctly.
+
+```{r}
+predict(modFit, testing, type = "class")
+```
+
+## Summary
+As shown above the Random forest method provides an accuracy of 99.9% using only 60% of the data, therefore, the model predicted all 20 predictions correctly for the test case. Furthermore, for class A the sensitivity is given as 1, which means that all True positive cases can be identified 100% of the time if the data is collected in the manner provided. This is a significant level of accuracy considering that only 58 oof the 160 predictors were given in the original data.
+
